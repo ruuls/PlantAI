@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Model weights and field data are large and often not ours to publish
+models/*.pt
+models/*.onnx
+models/*.engine
+data/
+*.tif
+*.tiff
+!tests/**/*.tif
+
+# Runtime scratch
+/tmp/
+uploads/
+.plantai/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store

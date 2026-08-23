@@ -1,0 +1,35 @@
+services:
+  plantai:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      # Point this at your checkpoint, or leave it unset and pick one in the UI.
+      MODEL_PATH: /models/best.pt
+      DATA_DIR: /data/plantai
+      LIBRARY_DIRS: /models,/data
+      PLANT_CLASSES: plant,crop,soybean,faba,fababean
+      WEED_CLASSES: weed,palmer,ragweed,grass
+      TILE_SIZE: "1280"
+      BATCH_TILES: "4"
+      YOLO_CONF: "0.25"
+      DEDUP_RADIUS_M: "0.10"
+      STAND_TARGET: "150000"
+      STAND_ALERT_PCT: "85"
+      MAX_UPLOAD_MB: "8192"
+      CORS_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+    volumes:
+      # Checkpoints, read-only — the service never writes here.
+      - ./models:/models:ro
+      # Orthomosaics. Mount read-write if you want "Build overviews" to work,
+      # since that rewrites the GeoTIFF in place.
+      - ./data:/data
+      - plantai_state:/data/plantai
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # Tiling a large mosaic is memory-hungry; raise this for multi-gigabyte files.
+    shm_size: "1gb"
+
+volumes:
+  plantai_state:

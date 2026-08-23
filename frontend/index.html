@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PlantAI · Detection console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2312161c'/><circle cx='36' cy='40' r='11' fill='%2345c46a'/><circle cx='66' cy='40' r='11' fill='%2345c46a'/><circle cx='36' cy='70' r='11' fill='%2345c46a'/><circle cx='66' cy='70' r='11' fill='%23ef5350'/></svg>">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/leaflet.draw.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ───────────────────────────────────────────── top bar ── -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-name">PlantAI</span>
+    <span class="brand-sub">Detection console</span>
+  </div>
+  <div class="rule-v"></div>
+  <div class="file-meta">
+    <div class="file-name mono" id="topbar-file" title="No orthomosaic loaded">No orthomosaic loaded</div>
+    <div class="file-sub" id="topbar-file-sub">Load a GeoTIFF to begin</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="toolbar" id="toolbar">
+    <button class="btn" data-action="home" title="Re-centre on the orthomosaic">Home view</button>
+    <button class="btn" data-action="restart-tiles" title="Reload the raster tile layer">Restart tiles</button>
+    <button class="btn" data-action="heatmap" title="Weed density heatmap">Heatmap</button>
+    <button class="btn" data-action="pdf" title="Generate a PDF field report">PDF report</button>
+    <button class="btn btn-accent" data-action="export-csv" title="Download detections as CSV">Export CSV</button>
+  </div>
+</header>
+
+<div class="body">
+
+  <!-- ─────────────────────────────────────────── sidebar ── -->
+  <aside class="dock">
+
+    <section class="dock-section">
+      <div class="dock-label">Layers</div>
+      <div class="layer-list" id="layer-list"></div>
+    </section>
+
+    <section class="dock-section">
+      <div class="dock-label">Basemap</div>
+      <div class="basemap-grid" id="basemap-grid"></div>
+    </section>
+
+    <section class="dock-section">
+      <div class="dock-label">Sources</div>
+
+      <div class="field">
+        <div class="field-label">AI model (.pt)</div>
+        <div class="row-inline">
+          <input class="path-field" id="model-path" placeholder="/models/best.pt" spellcheck="false">
+          <button class="icon-btn" id="model-browse" title="Pick from the model library">…</button>
+        </div>
+        <button class="wide-btn" id="model-load">Load model</button>
+        <div class="status-line" id="model-status">
+          <span class="dot dot-idle"></span><span>No model loaded</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">Orthomosaic (.tif)</div>
+        <div class="seg" id="ortho-mode">
+          <button class="seg-btn is-on" data-mode="path">Local path</button>
+          <button class="seg-btn" data-mode="upload">Upload</button>
+        </div>
+
+        <div class="field-body" id="ortho-path-body">
+          <div class="row-inline">
+            <input class="path-field" id="ortho-path" placeholder="/data/orthomosaic.tif" spellcheck="false">
+            <button class="icon-btn" id="ortho-browse" title="Pick from the raster library">…</button>
+          </div>
+          <button class="wide-btn" id="ortho-load">Load orthomosaic</button>
+        </div>
+
+        <div class="field-body is-hidden" id="ortho-upload-body">
+          <label class="dropzone" id="ortho-drop">
+            <input type="file" accept=".tif,.tiff" hidden id="ortho-file">
+            Drop GeoTIFF or browse<br><span class="faint" id="ortho-upload-hint">up to 8 GB</span>
+          </label>
+          <div class="hint">Large mosaics load faster by path — the file is read in place instead of copied.</div>
+          <div class="progress-line is-hidden" id="ortho-upload-progress">
+            <div class="progress"><div class="progress-fill" style="width:0%"></div></div>
+            <span class="num">0%</span>
+          </div>
+        </div>
+
+        <div class="notice notice-amber is-hidden" id="overview-notice">
+          <div class="notice-text">No overviews found — this TIFF may pan and zoom slowly.</div>
+          <button class="wide-btn" id="build-overviews">Build overviews now</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">Plant / weed locations</div>
+        <div class="radio-list" id="source-list"></div>
+        <div class="field-body" id="csv-source-body">
+          <label class="dropzone" id="csv-drop">
+            <input type="file" accept=".csv" hidden id="csv-file">
+            Drop detection CSV or browse
+          </label>
+          <div class="row-inline">
+            <input class="path-field" id="csv-crs" value="EPSG:32618" spellcheck="false" title="CRS of center_x / center_y columns">
+          </div>
+          <button class="wide-btn" id="csv-load" disabled>Load plant/weed locations</button>
+          <div class="hint">Accepts latitude/longitude, center_x/center_y or global_x/global_y.</div>
+        </div>
+        <div class="field-body is-hidden" id="run-source-body">
+          <div class="hint">Open the <b>Detect in field</b> tab to run the model.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="dock-section dock-section-last">
+      <div class="dock-label">Filters</div>
+      <div class="slider-stack" id="filter-sliders"></div>
+    </section>
+  </aside>
+
+  <!-- ────────────────────────────────────────────── main ── -->
+  <main class="main">
+    <nav class="tabs" id="tabs"></nav>
+
+    <!-- ══════════════════════════════ tab: field map ══ -->
+    <section class="pane" data-pane="map">
+      <div class="headline" id="headline"></div>
+      <div class="map-row">
+        <div class="map-wrap">
+          <div id="map"></div>
+          <div class="map-legend">
+            <div class="map-legend-head"><span class="dock-label">Legend</span></div>
+            <div class="map-legend-body">
+              <div class="legend-row">
+                <span class="legend-key"><span class="swatch-dot" style="background:var(--plant)"></span>Plant</span>
+                <span class="num" id="legend-plants">0</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-key"><span class="swatch-dot" style="background:var(--weed)"></span>Weed</span>
+                <span class="num" id="legend-weeds">0</span>
+              </div>
+            </div>
+          </div>
+          <div class="map-empty" id="map-empty">
+            <div class="map-empty-card">
+              <div class="map-empty-title">No orthomosaic loaded</div>
+              <div class="map-empty-text">
+                Point the console at a georeferenced GeoTIFF in the sidebar, or switch the basemap
+                to satellite imagery to work from detections alone.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="side-panel">
+          <div class="side-head">
+            <div class="dock-label">Area of interest</div>
+            <div class="side-sub" id="aoi-sub">Draw a polygon to scope counts</div>
+          </div>
+          <div class="stat-grid" id="aoi-stats"></div>
+          <div class="side-block">
+            <div class="dock-label">Stand status</div>
+            <div class="banner banner-amber" id="map-banner">
+              <div class="banner-title">No stand estimate</div>
+              <div class="banner-detail">Load detections and draw an area to assess the stand.</div>
+            </div>
+            <div class="progress"><div class="progress-fill" id="map-stand-bar" style="width:0%"></div></div>
+            <div class="row-between"><span class="num">0</span><span class="num" id="map-target-label">target 150,000/ac</span></div>
+          </div>
+          <div class="side-block side-actions">
+            <button class="wide-btn" data-action="export-csv">Download filtered CSV</button>
+            <button class="wide-btn" data-action="export-aoi">Download latest AOI CSV</button>
+            <button class="wide-btn" data-action="clear-aoi">Clear saved AOI</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════ tab: field analysis ══ -->
+    <section class="pane pane-scroll is-hidden" data-pane="analysis">
+      <div class="card">
+        <div class="card-head">1 — Analysis area</div>
+        <div class="card-body row-wrap gap-lg">
+          <div class="radio-list radio-row" id="scope-choices"></div>
+          <span class="hint" id="scope-hint"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">2 — Stand-count geometry</div>
+        <div class="card-body row-wrap gap-xl align-end">
+          <div class="field-col">
+            <span class="field-label">Plot ID / sample name</span>
+            <input class="text-input" id="plot-id" value="plot_001" spellcheck="false">
+          </div>
+          <div class="field-col">
+            <span class="field-label">Plants/acre basis</span>
+            <div class="seg" id="basis-seg">
+              <button class="seg-btn is-on" data-basis="rows">Plot row geometry</button>
+              <button class="seg-btn" data-basis="area">Actual map / AOI area</button>
+            </div>
+          </div>
+          <div class="row-wrap gap-xl align-end" id="geo-fields"></div>
+        </div>
+        <div class="card-note" id="geometry-note"></div>
+      </div>
+
+      <div class="banner banner-amber" id="analysis-banner">
+        <div class="banner-title">No stand estimate</div>
+        <div class="banner-detail">Load detections to run the stand-count analysis.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">3 — Stand-count results</div>
+        <div class="stat-grid stat-grid-5" id="stand-stats"></div>
+      </div>
+
+      <div class="split-grid">
+        <div class="card">
+          <div class="card-head">Row-level summary · rows.csv</div>
+          <div class="table-scroll">
+            <table class="data-table" id="rows-table"></table>
+          </div>
+          <div class="card-note">Row values are evenly allocated across the plot; exact per-row counts need row polygons.</div>
+        </div>
+        <div class="card">
+          <div class="card-head">Confidence distribution</div>
+          <div class="bar-chart" id="conf-chart"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Class confidence</div>
+        <div class="table-scroll">
+          <table class="data-table" id="class-table"></table>
+        </div>
+      </div>
+
+      <div class="row-inline gap-sm">
+        <button class="btn" data-export="stand">Download stand summary CSV</button>
+        <button class="btn" data-export="plots">Download plots.csv</button>
+        <button class="btn" data-export="rows">Download rows.csv</button>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════ tab: detect in field ══ -->
+    <section class="pane pane-scroll is-hidden" data-pane="detect">
+      <div class="card">
+        <div class="card-head">Detection method</div>
+        <div class="card-body method-list" id="method-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Advanced settings — optional</div>
+        <div class="card-body row-wrap gap-xl align-end">
+          <div class="field-col">
+            <span class="field-label">Tile size</span>
+            <div class="seg" id="tile-seg">
+              <button class="seg-btn mono" data-tile="640">640</button>
+              <button class="seg-btn mono is-on" data-tile="1280">1280</button>
+            </div>
+          </div>
+          <div class="row-wrap gap-xl align-end" id="detect-params"></div>
+        </div>
+        <div class="card-note" id="detect-note"></div>
+      </div>
+
+      <div class="run-row">
+        <button class="run-btn" id="run-detect">Run detection on full field</button>
+        <span class="hint" id="run-hint">Uses the settings above</span>
+        <button class="btn is-hidden" id="cancel-detect">Cancel</button>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Progress</div>
+        <div id="progress-steps"></div>
+        <div class="card-foot">
+          <button class="btn" id="download-run-csv" disabled>Download plant/weed locations CSV</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════ tab: detect on images ══ -->
+    <section class="pane pane-scroll is-hidden" data-pane="images">
+      <div class="card">
+        <div class="card-head">Upload image tiles — JPG / PNG</div>
+        <div class="card-body row-wrap gap-lg align-end">
+          <div class="grow">
+            <label class="dropzone" id="images-drop">
+              <input type="file" accept="image/png,image/jpeg" multiple hidden id="images-file">
+              Drop images here or <span class="link">browse files</span>
+            </label>
+          </div>
+          <div class="field-col slider-col">
+            <div class="row-between">
+              <span class="field-label">Confidence threshold</span>
+              <span class="num" id="img-conf-label">0.25</span>
+            </div>
+            <input type="range" id="img-conf" min="0" max="1" step="0.05" value="0.25">
+          </div>
+          <button class="run-btn run-btn-sm" id="run-images" disabled>Run detection on images</button>
+        </div>
+        <div class="card-note" id="images-note">Images are scored one at a time; georeferencing is not applied.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">Batch summary</div>
+        <div class="table-scroll">
+          <table class="data-table" id="batch-table"></table>
+        </div>
+        <div class="card-foot">
+          <button class="btn" id="download-batch" disabled>Download batch CSV</button>
+        </div>
+      </div>
+
+      <div class="preview-grid" id="image-previews"></div>
+    </section>
+
+    <!-- ────────────────────────────────────── status bar ── -->
+    <footer class="statusbar mono">
+      <span id="status-coords">—</span>
+      <span id="status-scale">1:—</span>
+      <span id="status-zoom">zoom —</span>
+      <span id="status-crs">EPSG:4326</span>
+      <span class="spacer"></span>
+      <span id="status-tilenote">No raster layer</span>
+      <span class="status-total" id="status-total">0 detections</span>
+    </footer>
+  </main>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/leaflet.draw.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
