@@ -7,7 +7,28 @@ Load a UAV orthomosaic, run a YOLO checkpoint over it, then work the results:
 review detections on the map, draw a plot, and read plants per acre, plants per
 foot of row and weed pressure against a target population.
 
-<!-- A screenshot of the console belongs here once you have run it on your own field. -->
+![The field map, with detections and a plot drawn over an orthomosaic](docs/screenshot-map.png)
+
+<details>
+<summary>More views</summary>
+
+**Weed density heatmap** — QGIS-style ramp over the weed detections only.
+
+![Weed density heatmap](docs/screenshot-heatmap.png)
+
+**Field analysis** — stand-count results for the drawn plot, with the row-level
+breakdown and confidence distribution.
+
+![Field analysis tab](docs/screenshot-analysis.png)
+
+**Detect in field** — method, parameters and live per-step progress.
+
+![Detect in field tab](docs/screenshot-detect.png)
+
+</details>
+
+<sub>Screenshots use a synthetic 1 cm/px test mosaic; the detections are the
+sample CSV from `tests/`.</sub>
 
 ---
 
