@@ -288,10 +288,9 @@ function wireCsv(actions) {
       );
       await actions.onDetectionsLoaded(result.id, result.summary);
       const notes = [result.import?.class_note, result.import?.confidence_note].filter(Boolean);
-      toast(
-        `${fmt(result.count)} detections loaded${notes.length ? ` — ${notes.join(' ')}` : ''}`,
-        notes.length ? 'warn' : 'ok',
-      );
+      if (notes.length) toast(notes.join(' '), 'warn', `${fmt(result.count)} detections loaded`);
+      else toast(`${fmt(result.count)} detections loaded`, 'ok');
+      warnIfFilterHidesMost(result, actions);
     } catch (err) {
       notifyError(err, 'Could not load the CSV');
     } finally {
@@ -299,6 +298,49 @@ function wireCsv(actions) {
       button.textContent = 'Load plant/weed locations';
     }
   });
+}
+
+/**
+ * Point out when the confidence filter is hiding most of what was just loaded.
+ *
+ * Detection tables are often exported at a low threshold (a file named
+ * `...-0.1-...` was written at 0.1); against the sidebar's default of 0.25
+ * that quietly removes over half the rows, and the headline count then
+ * disagrees with the file for no visible reason.
+ */
+function warnIfFilterHidesMost(result, actions) {
+  const spread = result.import?.confidence;
+  const total = Number(result.count) || 0;
+  if (!spread || !total || state.minConf <= spread.min) return;
+
+  let shown = 0;
+  for (let i = 0; i < state.points.count; i += 1) {
+    if (state.points.conf[i] >= state.minConf) shown += 1;
+  }
+  const hidden = total - shown;
+  if (hidden < total * 0.15) return;
+
+  const floor = Math.max(0, Math.floor(spread.min * 20) / 20);
+  toast(
+    `${fmt(hidden)} of ${fmt(total)} rows sit below the ${Math.round(state.minConf * 100)}% `
+    + `confidence filter (this file goes down to ${Math.round(spread.min * 100)}%). `
+    + 'Lower "Min confidence" in Filters to include them.',
+    'warn',
+    'Filter is hiding most of this file',
+  );
+
+  const banner = $('#csv-source-body');
+  banner.querySelector('.filter-fix')?.remove();
+  banner.append(el('button', {
+    class: 'wide-btn filter-fix',
+    text: `Show all — set filter to ${Math.round(floor * 100)}%`,
+    onClick: (e) => {
+      setState({ minConf: floor });
+      renderSidebar();
+      actions.onFilterChanged();
+      e.currentTarget.remove();
+    },
+  }));
 }
 
 // ───────────────────────────────────────────── file library ──

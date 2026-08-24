@@ -453,3 +453,16 @@ def test_tiles_are_safe_under_concurrent_requests(client: TestClient, dataset: d
 
     assert all(r.status_code == 200 for r in responses)
     assert all(r.content[:4] == b"\x89PNG" for r in responses)
+
+
+def test_csv_import_reports_its_confidence_spread(client: TestClient, detections: dict) -> None:
+    """The UI needs this to warn when the display filter hides most of a file.
+
+    Detection tables are routinely exported at a low threshold; against a
+    default 25% filter that removes over half the rows, and the headline count
+    then disagrees with the file for no visible reason.
+    """
+    spread = detections["import"]["confidence"]
+    assert spread["min"] <= spread["median"] <= spread["max"]
+    assert 0.0 <= spread["min"] <= 1.0
+    assert 0.0 <= spread["max"] <= 1.0

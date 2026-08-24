@@ -259,6 +259,16 @@ async def upload_detections(
         stats={"kept": int(len(frame)), **summarise(frame)},
         note=file.filename or "uploaded.csv",
     )
+
+    # A table exported at conf 0.1 loses most of its rows to a 0.25 display
+    # filter. Hand the UI the distribution so it can say so instead of just
+    # showing a smaller number than the file contains.
+    conf = frame["confidence"].to_numpy(dtype="float64")
+    report["confidence"] = {
+        "min": round(float(conf.min()), 4),
+        "median": round(float(np.median(conf)), 4),
+        "max": round(float(conf.max()), 4),
+    }
     return {**record.as_dict(), "summary": summarise(frame), "import": report}
 
 
